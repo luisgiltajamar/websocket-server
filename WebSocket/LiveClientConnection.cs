@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Net.WebSockets;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -76,14 +77,8 @@ namespace ContosoConf.Live
             {
                 var message = await ReceiveMessage();
                 if (message == null) continue;
-                if (message.ContainsKey("ask"))
-                {
-                    HandleAskQuestion(message);
-                }
-                else if (message.ContainsKey("report"))
-                {
-                    HandleReport(message);
-                }
+              
+                Questions.Add(new Question(message.text,message.remitente));
             }
         }
 
@@ -112,33 +107,29 @@ namespace ContosoConf.Live
                 ));
         }
 
-        void HandleAskQuestion(IDictionary<string, object> message)
-        {
-            var ask = (string)message["ask"];
-            Questions.Add(new Question(ask));
-        }
+     
 
-        void HandleReport(IDictionary<string, object> message)
-        {
-            var id = (int)message["report"];
-            var question = Questions.FirstOrDefault(q => q.id == id);
-            if (question == null) return;
-            Task.Delay(1000).ContinueWith(_ => Questions.Remove(question));
-        }
-
-        async Task<IDictionary<string, object>> ReceiveMessage()
+        async Task<Question> ReceiveMessage()
         {
             var buffer = new ArraySegment<byte>(new byte[1024]);
             var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
             var json = Encoding.UTF8.GetString(buffer.Array, buffer.Offset, result.Count);
             var serializer = new JavaScriptSerializer();
-            return (IDictionary<string, object>)serializer.DeserializeObject(json);
+            try
+            {
+                var obj = serializer.Deserialize<Question>(json);
+                return obj;
+            }
+            catch (Exception e)
+            {
+                return null;
+            }
         }
 
         class Question
         {
             static int _nextId = 1000;
-
+            public Question() { }
             public Question(string text)
             {
                 id = Interlocked.Increment(ref _nextId);
@@ -149,10 +140,19 @@ namespace ContosoConf.Live
             {
                 this.id = id;
                 this.text = text;
+                remitente = "Sistema";
+            }
+            
+            public Question(string text, String remite)
+            {
+                id = Interlocked.Increment(ref _nextId);
+                this.text = text;
+                this.remitente = remite;
             }
 
             public string text { get; set; }
             public int id { get; set; }
+            public string remitente { get; set; }
         }
 
         class QuestionList : ObservableCollection<Question>
